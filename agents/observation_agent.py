@@ -2,6 +2,7 @@ from agents.llh_agent import *
 import numpy as np
 
 class ObservationAgent(LLHAgent):
+    """ Agent computing LLH (computes according to PRE mapping) """
     def predict(self,batch):
         #Angles observed
         obs = batch.get('obs')[:,:,:2]

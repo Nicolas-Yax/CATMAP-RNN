@@ -1,21 +1,24 @@
 import numpy as np
 from batch import Batch
-from numpy.random import default_rng
-
-rng = default_rng()
+from agents.angle_agent import *
 
 class Env:
-    def __init__(self,deck_size,kappa=0.5):
+    """ CATMAP Environment class """
+    def __init__(self,deck_size,kappa=0.5,optimal=False):
+        """ deck_size is the length of sequences, kappa is the vonmises parameter and optimal=True returns optimal labels instead of real ones (accuracy of 1 reachable) """
         self.deck_size = deck_size
         self.kappa = kappa
-        self.ref_angles = [np.pi*i/8 for i in range(8)]
+        self.ref_angles = [2*np.pi*i/8 for i in range(8)]
+        self.optimal_labels = optimal
 
     def reset(self):
+        """ Sample new generative parameters (new ref and new color) """
         #Sample new generative parameters
         self.ref = np.random.choice(self.ref_angles,1)[0]
-        self.color = np.random.randint(0,2)
+        self.color = np.random.randint(0,2) #[0,1]
 
     def sample_batch(self,size):
+        """ Samples a Batch of specified size from CATMAP Environment """
         batch = Batch()
         for i in range(size):
             #Get new generative parameters
@@ -25,8 +28,9 @@ class Env:
             batch.add('color',self.color)
             #Sample the sequence
             for j in range(self.deck_size):
-                mean = (self.ref+self.color*np.pi/2)%np.pi
-                angle = rng.vonmises(mean,self.kappa)
+                mean = (self.ref+self.color*np.pi)
+                angle = np.random.vonmises(mean,self.kappa)
+                #angle /= 2
                 obs = [np.cos(angle),np.sin(angle),np.cos(self.ref),np.sin(self.ref)]
                 #Add to batch
                 batch.add('mean',mean)
@@ -39,4 +43,8 @@ class Env:
         #batch.reshape('eps',(size,self.deck_size))
         batch.reshape('angle',(size,self.deck_size))
         batch.reshape('obs',(size,self.deck_size,4))
+        #Put optimal labels
+        if self.optimal_labels:
+            lbls = AngleAgent().predict(batch)
+            batch.set('color',lbls)
         return batch

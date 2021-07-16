@@ -4,6 +4,7 @@ from agent import Agent
 import numpy as np
 
 import matplotlib.pyplot as plt
+import os
 
 class RNNAgent(Agent):
     def __init__(self,input_shape,hidden_shape,out_shape,lr=10**-3):
@@ -14,6 +15,30 @@ class RNNAgent(Agent):
 
         self.reset()
 
+        self.layer_list = []
+
+    def get_path_weights(self,mname,wname):
+        path = os.path.join('models',mname+"-"+self.postname,wname)
+        os.makedirs(path, exist_ok=True)
+        return path
+    
+    def save(self,sname): #save name
+        print("SAVING",self.layer_list)
+        self._save(sname,self.layer_list)
+
+    def load(self,sname):
+        print("LOADING",self.layer_list)
+        self._load(sname,self.layer_list)
+
+    def _save(self,sname,lname):
+        for name in lname:
+            np.save(self.get_path_weights(sname,name),getattr(self,name).get_weights())
+
+    def _load(self,sname,lname):
+        for name in lname:
+            w = np.load(self.get_path_weights(sname,name)+'.npy',allow_pickle=True)
+            getattr(self,name).set_weights(w)
+        
     def reset_rnn(self):
         raise NotImplementedError
 
@@ -47,21 +72,31 @@ class RNNAgent(Agent):
         acc = np.mean(acc_array)
         return acc
     
-    def loss(self,batch):
+    def reinforce_loss(self,batch):
         """ Computes the loss from a batch and labels """
         #Get probas for colors
         out_actions,out_probas = self.predict(batch,return_probas=True)
         #Tensorflow way to get proba associated with chosen colors
-        indices = [[i,out_actions[i].numpy()] for i in range(out_actions.shape[0])]
+        indices = [[i,out_actions[i]] for i in range(out_actions.shape[0])]
         pact = tf.gather_nd(out_probas,indices)
         #Rewards computation
-        rews = (out_actions.numpy()==batch.get('color'))*2-1
+        rews = tf.cast(tf.equal(out_actions,batch.get('color')),dtype=tf.float64)*2-1
         #print("---",out_probas[:5],out_actions[:5],indices[:5],pact[:5],label[:5],rews[:5])
         #Loss computation
         l = rews*tf.math.log(pact)
         #print('--',l[:5])
         lmean = tf.reduce_mean(l)
         return -lmean
+
+    def supervised_crossentropy_loss(self,batch):
+        lbl = batch.get('color')
+        out = self.forward(batch)
+        loss = tf.keras.losses.sparse_categorical_crossentropy(lbl,out)
+        lmean = tf.reduce_mean(loss)
+        return loss
+
+    def loss(self,batch):
+        return self.reinforce_loss(batch)
 
     def parameters(self):
         return self.nn.weights
@@ -71,16 +106,16 @@ class RNNAgent(Agent):
         for _ in range(nb_fit):
             self.opt.minimize(lambda : self.loss(batch),self.parameters())
 
-    def train(self,env,nb,batch_size=2000,nb_fit=5):
+    def train(self,env,nb,batch_size=2000,nb_fit=5,verbose=1):
         lscores = []
         for i in range(nb):
             batch = env.sample_batch(batch_size)
             eval_score = self.evaluate(batch)
             self.scores.append(eval_score)
             lscores.append(eval_score)
-            if len(lscores)>100:
+            if len(lscores)>10:
                 del lscores[0]
-            if i%100==0:
+            if i%100==0 and verbose>=1 or verbose >=2:
                 print(i,np.mean(lscores))
             self.fit(batch,nb_fit)
 

@@ -1,8 +1,9 @@
 from agents.llh_agent import LLHAgent
 import numpy as np
 
+
 class AngleAgent(LLHAgent):
-    """ Agent predicting colors from angles directly (instead of using cos and sin encoding of angles """
+    """ Agent predicting colors from angles directly (instead of using cos and sin encoding of angles (used for debug)"""
     def predict(self,batch):
         refs = batch.get('ref')
         angles = batch.get('angle')

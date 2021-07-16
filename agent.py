@@ -1,6 +1,7 @@
 import numpy as np
 
 class Agent:
+    """ Abstract class for agents """
     def predict(self,batch):
         raise NotImplementedError
     def evaluate(self,batch):
