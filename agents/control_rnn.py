@@ -68,7 +68,7 @@ class SeparatedControlRNN(ControlRNN):
         if self.noise:
             self.rnn_cell = NoisySeparatedSimpleRNNCell(self.hidden_shape,self.separated_params,free_feedback=self.free_feedback,activation=self.activation,noise=self.noise)
         else:
-            self.rnn_cell = SeparatedSimpleRNNCell(self.hidden_shape,self.separated_params,free_feedback=free_feedback,activation=self.activation)
+            self.rnn_cell = SeparatedSimpleRNNCell(self.hidden_shape,self.separated_params,free_feedback=self.free_feedback,activation=self.activation)
         self.rnn = RNN(self.rnn_cell,return_sequences=True)
         #Random Training
         if self.random_training:
