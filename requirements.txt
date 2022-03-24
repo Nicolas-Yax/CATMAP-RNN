@@ -1,0 +1,5 @@
+tensorflow
+matplotlib
+pickle-mixin
+scipy
+sklearn
