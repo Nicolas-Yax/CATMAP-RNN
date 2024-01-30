@@ -24,11 +24,15 @@ class RNNAgent(Agent):
     
     def save(self,sname): #save name
         print("SAVING",self.layer_list)
-        self._save(sname,self.layer_list)
+        #self._save(sname,self.layer_list)
+        for name in self.layer_list:
+            getattr(self,name).save_weights(self.get_path_weights(sname,name))
 
     def load(self,sname):
         print("LOADING",self.layer_list)
-        self._load(sname,self.layer_list)
+        #self._load(sname,self.layer_list)
+        for name in self.layer_list:
+            getattr(self,name).load_weights(self.get_path_weights(sname,name))
 
     def _save(self,sname,lname):
         for name in lname:
@@ -104,7 +108,7 @@ class RNNAgent(Agent):
     def fit(self,batch,nb_fit=5):
         """ Fit once the model and given batch and labels """
         for _ in range(nb_fit):
-            self.opt.minimize(lambda : self.loss(batch),self.parameters())
+            self.opt.minimize(lambda : self.loss(batch),var_list=self.parameters())
 
     def train(self,env,nb,batch_size=2000,nb_fit=5,verbose=1):
         lscores = []
