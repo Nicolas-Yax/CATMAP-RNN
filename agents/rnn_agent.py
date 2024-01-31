@@ -63,9 +63,15 @@ class RNNAgent(Agent):
     def actions_from_probas(self,probas):
         return tf.random.categorical(tf.math.log(probas),1)[:,0]
 
-    def predict(self,batch,return_probas=False):
+    def predict(self,batch,return_probas=False,store_probas=False):
         probas_out = self.forward(batch)
         actions = self.actions_from_probas(probas_out)
+        if store_probas:
+            #select probas of actions
+            indices = [[i,actions[i]] for i in range(actions.shape[0])]
+            probas = tf.gather_nd(probas_out,indices)
+            batch.set('old_probas',probas)
+            batch.set('old_actions',actions)
         if return_probas:
             return actions,probas_out
         return actions
@@ -85,12 +91,34 @@ class RNNAgent(Agent):
         pact = tf.gather_nd(out_probas,indices)
         #Rewards computation
         rews = tf.cast(tf.equal(out_actions,batch.get('color')),dtype=tf.float64)*2-1
-        #print("---",out_probas[:5],out_actions[:5],indices[:5],pact[:5],label[:5],rews[:5])
+        #normalize rewards
+        rews = rews - tf.reduce_mean(rews)
         #Loss computation
         l = rews*tf.math.log(pact)
         #print('--',l[:5])
         lmean = tf.reduce_mean(l)
         return -lmean
+    
+    def ppo_loss(self, batch,clip_epsilon=0.1,i=None):
+        """ Computes the PPO loss from a batch and labels """
+        # Get probas for actions
+        out_actions, out_probas = self.predict(batch, return_probas=True, store_probas=False)#(i==0))
+        # Tensorflow way to get proba associated with chosen actions
+        indices = [[i, out_actions[i]] for i in range(out_actions.shape[0])]
+        pact = tf.gather_nd(out_probas, indices)
+        # Rewards computation
+        rews = tf.cast(tf.equal(out_actions, batch.get('color')), dtype=tf.float64) * 2 - 1
+        #normalize rewards
+        rews = rews - tf.reduce_mean(rews)
+        # Old probas for actions
+        old_actions, old_probas = batch.get('old_actions'), batch.get('old_probas')
+        # Compute the ratio of new probas to old probas
+        ratio = tf.exp(tf.math.log(pact) - tf.math.log(old_probas))
+        # Compute the surrogate loss
+        surrogate_loss = tf.minimum(ratio * rews, tf.clip_by_value(ratio, 1 - clip_epsilon, 1 + clip_epsilon) * rews)
+        # Compute the clipped loss
+        clipped_loss = -tf.reduce_mean(surrogate_loss)
+        return clipped_loss
 
     def supervised_crossentropy_loss(self,batch):
         lbl = batch.get('color')
@@ -99,7 +127,8 @@ class RNNAgent(Agent):
         lmean = tf.reduce_mean(loss)
         return loss
 
-    def loss(self,batch):
+    def loss(self,batch,i=None):
+        #return self.ppo_loss(batch,i=i)
         return self.reinforce_loss(batch)
 
     def parameters(self):
@@ -107,8 +136,8 @@ class RNNAgent(Agent):
     
     def fit(self,batch,nb_fit=5):
         """ Fit once the model and given batch and labels """
-        for _ in range(nb_fit):
-            self.opt.minimize(lambda : self.loss(batch),var_list=self.parameters())
+        for i in range(nb_fit):
+            self.opt.minimize(lambda : self.loss(batch,i=i),var_list=self.parameters())
 
     def train(self,env,nb,batch_size=2000,nb_fit=5,verbose=1):
         lscores = []
@@ -119,7 +148,7 @@ class RNNAgent(Agent):
             lscores.append(eval_score)
             if len(lscores)>10:
                 del lscores[0]
-            if i%100==0 and verbose>=1 or verbose >=2:
+            if verbose>=1 or verbose >=2:
                 print(i,np.mean(lscores))
             self.fit(batch,nb_fit)
 
