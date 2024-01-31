@@ -39,10 +39,8 @@ class UniversalRNN(RNNAgent):
         #RNN
         self.rnn = RNN(self.rnn_cell,return_sequences=True)
         #Random Training
-        if self.random_training:
-            self.timestep_chooser = RandomTimestep()
-        else:
-            self.timestep_chooser = LastTimestep()
+        self.random_timestep_chooser = RandomTimestep()
+        self.last_timestep_chooser = LastTimestep()
             
         #Build the model
         x = inp
@@ -60,7 +58,7 @@ class UniversalRNN(RNNAgent):
         out = self.out_dense(x)
         self.out_nn = tf.keras.Model(inputs=inp,outputs=out)
     
-    def forward(self,batch):
+    def forward(self,batch,training=False,return_states=False):
         """ Computes the output of the model from a Batch """
         #get ref
         batch_obs = batch.get('obs')[:,:,:]
@@ -68,9 +66,43 @@ class UniversalRNN(RNNAgent):
         state = tf.zeros((tf.shape(batch_obs)[0],self.hidden_shape),dtype=tf.float64)
         # -- sequence integration
         x = batch_obs
-        x = self.rnn(x,initial_state=state)
-        x = self.timestep_chooser(x)
+        x0 = x[:,:1,:]
+        out0 = self.rnn(x0,initial_state=state)
+
+        xseq = x[:,1:-1,:]
+        outseq = self.rnn(xseq,initial_state=out0[:,-1,:])
+
+        if training and self.random_training:
+            outseq_timed = self.random_timestep_chooser(outseq)
+        else:
+            outseq_timed = self.last_timestep_chooser(outseq)
+
+        xl = x[:,-1:,:]
+        outl = self.rnn(xl,initial_state=outseq_timed)
+
+        #x = self.rnn(x0,initial_state=state)
+        #x = self.timestep_chooser(x)
         # -- probabilities computation
-        out = self.out_dense(x)
-        
+        out = self.out_dense(outl[:,0,:])
+        if return_states:
+            return out,tf.concat([out0,outseq,outl],axis=1)
         return out
+    
+#Universal RRN that take their decision at the last layer only
+class LazyUniversalRNN(UniversalRNN):
+    def lazy_reinforce_loss(self,batch):
+        """ Computes the loss from a batch and labels """
+        #Get probas for colors
+        out_actions,out_probas = self.predict(batch,return_probas=True)
+        #Tensorflow way to get proba associated with chosen colors
+        indices = [[i,out_actions[i]] for i in range(out_actions.shape[0])]
+        pact = tf.gather_nd(out_probas,indices)
+        #Rewards computation
+        rews = tf.cast(tf.equal(out_actions,batch.get('color')),dtype=tf.float64)*2-1
+        #normalize rewards
+        rews = rews - tf.reduce_mean(rews)
+        #Loss computation
+        l = rews*tf.math.log(pact)
+        #print('--',l[:5])
+        lmean = tf.reduce_mean(l)
+        return -lmean

@@ -63,8 +63,10 @@ class RNNAgent(Agent):
     def actions_from_probas(self,probas):
         return tf.random.categorical(tf.math.log(probas),1)[:,0]
 
-    def predict(self,batch,return_probas=False,store_probas=False):
-        probas_out = self.forward(batch)
+    def predict(self,batch,return_probas=False,store_probas=False,training=False,return_states=False):
+        probas_out = self.forward(batch,training=training,return_states=return_states)
+        if return_states:
+            probas_out,states = probas_out
         actions = self.actions_from_probas(probas_out)
         if store_probas:
             #select probas of actions
@@ -72,12 +74,15 @@ class RNNAgent(Agent):
             probas = tf.gather_nd(probas_out,indices)
             batch.set('old_probas',probas)
             batch.set('old_actions',actions)
+        ret = [actions]
         if return_probas:
-            return actions,probas_out
-        return actions
+            ret.append(probas_out)
+        if return_states:
+            ret.append(states)
+        return ret
 
     def evaluate(self,batch):
-        actions = self.predict(batch)
+        actions = self.predict(batch,training=False)
         acc_array = actions.numpy()==batch.get('color')
         acc = np.mean(acc_array)
         return acc
@@ -85,7 +90,7 @@ class RNNAgent(Agent):
     def reinforce_loss(self,batch):
         """ Computes the loss from a batch and labels """
         #Get probas for colors
-        out_actions,out_probas = self.predict(batch,return_probas=True)
+        out_actions,out_probas = self.predict(batch,return_probas=True,training=True)
         #Tensorflow way to get proba associated with chosen colors
         indices = [[i,out_actions[i]] for i in range(out_actions.shape[0])]
         pact = tf.gather_nd(out_probas,indices)
