@@ -79,6 +79,8 @@ class RNNAgent(Agent):
             ret.append(probas_out)
         if return_states:
             ret.append(states)
+        if len(ret)==1:
+            return ret[0]
         return ret
 
     def evaluate(self,batch):

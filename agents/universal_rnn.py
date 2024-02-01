@@ -9,10 +9,10 @@ import os
 
 class UniversalRNN(RNNAgent):
     """ Agent using a RNN to solve the POST task """
-    def __init__(self,hidden_shape,input_shape=(None,4),out_shape=2,lr=10**-3,noise=None,random_training=False,activation='tanh'):
+    def __init__(self,hidden_shape,input_shape=(None,4),out_shape=2,lr=10**-3,noise=None,activation='tanh'):
         self.activation = activation
         self.noise = noise
-        self.random_training = random_training
+        self.random_training = True
         super().__init__(input_shape,hidden_shape,out_shape,lr=lr)
 
         self.postname = 'post'
@@ -55,7 +55,9 @@ class UniversalRNN(RNNAgent):
         self.out_dense = Dense(self.out_shape,activation='softmax')
         #Build the model
         x = inp
+        #concat out(x) and 1-out(x)
         out = self.out_dense(x)
+        #out_ = tf.concat([out,1-out],axis=1)
         self.out_nn = tf.keras.Model(inputs=inp,outputs=out)
     
     def forward(self,batch,training=False,return_states=False):
@@ -72,7 +74,7 @@ class UniversalRNN(RNNAgent):
         xseq = x[:,1:-1,:]
         outseq = self.rnn(xseq,initial_state=out0[:,-1,:])
 
-        if training and self.random_training:
+        if True:#training and self.random_training:
             outseq_timed = self.random_timestep_chooser(outseq)
         else:
             outseq_timed = self.last_timestep_chooser(outseq)
@@ -90,6 +92,31 @@ class UniversalRNN(RNNAgent):
     
 #Universal RRN that take their decision at the last layer only
 class LazyUniversalRNN(UniversalRNN):
+
+    def parameters(self):
+        """ Returns parameters of the networks """
+        return self.nn.weights + self.out_nn.weights #Concat lists of params
+    
+    def adv_parameters(self):
+        """ Returns parameters of the networks """
+        return self.adv_nn.weights
+
+    def reset_rnn(self):
+        """ Define/Reset the RNN """
+        self.reset_nn()
+        self.reset_out()
+        self.reset_adv()
+
+    def reset_adv(self):
+        """ Define/Reset the adv nn """
+        #Out network
+        inp = Input(shape=self.hidden_shape)
+        self.adv_dense = Dense(1,activation='sigmoid')
+        #Build the model
+        x = inp
+        out = self.adv_dense(x)
+        self.adv_nn = tf.keras.Model(inputs=inp,outputs=out)
+
     def lazy_reinforce_loss(self,batch):
         """ Computes the loss from a batch and labels """
         #Get probas for colors
@@ -106,3 +133,8 @@ class LazyUniversalRNN(UniversalRNN):
         #print('--',l[:5])
         lmean = tf.reduce_mean(l)
         return -lmean
+    
+    def fit(self,batch,nb_fit=5):
+        """ Fit once the model and given batch and labels """
+        for i in range(nb_fit):
+            self.opt.minimize(lambda : self.loss(batch,i=i),var_list=self.parameters())
