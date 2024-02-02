@@ -87,7 +87,7 @@ class UniversalRNN(RNNAgent):
         # -- probabilities computation
         out = self.out_dense(outl[:,0,:])
         if return_states:
-            return out,tf.concat([out0,outseq,outl],axis=1)
+            return out,tf.concat([out0[:,None,:],outseq[:,None,:],outl[:,None,:]],axis=1)
         return out
     
 #Universal RRN that take their decision at the last layer only
@@ -111,7 +111,7 @@ class LazyUniversalRNN(UniversalRNN):
         """ Define/Reset the adv nn """
         #Out network
         inp = Input(shape=self.hidden_shape)
-        self.adv_dense = Dense(1,activation='sigmoid')
+        self.adv_dense = Dense(1)
         #Build the model
         x = inp
         out = self.adv_dense(x)
@@ -120,21 +120,23 @@ class LazyUniversalRNN(UniversalRNN):
     def lazy_reinforce_loss(self,batch):
         """ Computes the loss from a batch and labels """
         #Get probas for colors
-        out_actions,out_probas = self.predict(batch,return_probas=True)
-        #Tensorflow way to get proba associated with chosen colors
-        indices = [[i,out_actions[i]] for i in range(out_actions.shape[0])]
-        pact = tf.gather_nd(out_probas,indices)
-        #Rewards computation
-        rews = tf.cast(tf.equal(out_actions,batch.get('color')),dtype=tf.float64)*2-1
-        #normalize rewards
-        rews = rews - tf.reduce_mean(rews)
-        #Loss computation
-        l = rews*tf.math.log(pact)
-        #print('--',l[:5])
-        lmean = tf.reduce_mean(l)
-        return -lmean
+        out_actions,out_probas,out_states = self.predict(batch,return_probas=True,return_states=True)
+        #Try to predict decision from latent space
+        adv_choice_prediction = self.adv_nn(out_states)
+        #Compute Cross-Entropy loss with actual out_actions
+        ce_loss = tf.keras.losses.sparse_categorical_crossentropy(out_actions,adv_choice_prediction)
+        return tf.reduce_mean(ce_loss)
+    
+    def adv_loss(self,batch,i=None):
+        return self.lazy_reinforce_loss(batch)
+    
+    def loss(self,batch,i=None):
+        reinforce_loss = self.reinforce_loss(batch)
+        adv_loss = self.adv_loss(batch)
+        return reinforce_loss - adv_loss
     
     def fit(self,batch,nb_fit=5):
         """ Fit once the model and given batch and labels """
         for i in range(nb_fit):
             self.opt.minimize(lambda : self.loss(batch,i=i),var_list=self.parameters())
+            self.opt.minimize(lambda : self.adv_loss(batch,i=i),var_list=self.adv_parameters())

@@ -17,11 +17,11 @@ class PreRNN(RNNAgent):
         super().__init__(input_shape,hidden_shape,out_shape,lr=lr)
 
         self.postname = 'pre'
-        self.layer_list = ['rnn','context_dense','out_dense']
+        self.layer_list = ['nn','context_nn','out_nn']
 
     def parameters(self):
         """ Returns parameters of the network """
-        return [self.nn.weights,self.context_nn.weights,self.out_nn.weights]
+        return self.nn.weights + self.context_nn.weights + self.out_nn.weights
 
     def reset_rnn(self):
         """ Define/Reset the RNN """
@@ -73,7 +73,7 @@ class PreRNN(RNNAgent):
         out = self.out_dense(x)
         self.out_nn = tf.keras.Model(inputs=inp,outputs=out)
     
-    def forward(self,batch):
+    def forward(self,batch,training=False,return_states=False):
         """ Computes the output of the model from a Batch """
         #get ref
         batch_obs = batch.get('obs')[:,:,:2]
