@@ -87,11 +87,15 @@ class UniversalRNN(RNNAgent):
         # -- probabilities computation
         out = self.out_dense(outl[:,0,:])
         if return_states:
-            return out,tf.concat([out0[:,None,:],outseq[:,None,:],outl[:,None,:]],axis=1)
+            return out,tf.concat([out0[:,:],outseq[:,:],outl[:,:]],axis=1)
         return out
     
 #Universal RRN that take their decision at the last layer only
 class LazyUniversalRNN(UniversalRNN):
+
+    def reset_opt(self):
+        self.opt = tf.keras.optimizers.Adam(self.lr)
+        self.adv_opt = tf.keras.optimizers.Adam(self.lr)
 
     def parameters(self):
         """ Returns parameters of the networks """
@@ -111,7 +115,7 @@ class LazyUniversalRNN(UniversalRNN):
         """ Define/Reset the adv nn """
         #Out network
         inp = Input(shape=self.hidden_shape)
-        self.adv_dense = Dense(1)
+        self.adv_dense = Dense(1,activation='sigmoid')
         #Build the model
         x = inp
         out = self.adv_dense(x)
@@ -122,9 +126,14 @@ class LazyUniversalRNN(UniversalRNN):
         #Get probas for colors
         out_actions,out_probas,out_states = self.predict(batch,return_probas=True,return_states=True)
         #Try to predict decision from latent space
-        adv_choice_prediction = self.adv_nn(out_states)
+        out_states_flat = tf.reshape(out_states,(out_states.shape[0]*out_states.shape[1],)+(out_states.shape[2],))
+        adv_choice_prediction_flat = self.adv_nn(out_states_flat)
+        #Add the second prediction as 1-p
+        adv_choice_prediction_flat_p = tf.concat([adv_choice_prediction_flat,1-adv_choice_prediction_flat],axis=1)
+        #repeat out_actions over adv_choice_prediction steps
+        out_actions = tf.repeat(out_actions,out_states.shape[1],axis=0)
         #Compute Cross-Entropy loss with actual out_actions
-        ce_loss = tf.keras.losses.sparse_categorical_crossentropy(out_actions,adv_choice_prediction)
+        ce_loss = tf.keras.losses.sparse_categorical_crossentropy(out_actions,adv_choice_prediction_flat_p)
         return tf.reduce_mean(ce_loss)
     
     def adv_loss(self,batch,i=None):
@@ -139,4 +148,4 @@ class LazyUniversalRNN(UniversalRNN):
         """ Fit once the model and given batch and labels """
         for i in range(nb_fit):
             self.opt.minimize(lambda : self.loss(batch,i=i),var_list=self.parameters())
-            self.opt.minimize(lambda : self.adv_loss(batch,i=i),var_list=self.adv_parameters())
+            self.adv_opt.minimize(lambda : self.adv_loss(batch,i=i),var_list=self.adv_parameters())

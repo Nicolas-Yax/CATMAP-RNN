@@ -18,7 +18,7 @@ class RNNAgent(Agent):
         self.layer_list = []
 
     def get_path_weights(self,mname,wname):
-        path = os.path.join('models',mname+"-"+self.postname,wname)
+        path = os.path.join('models',mname,wname)
         os.makedirs(path, exist_ok=True)
         return path
     
