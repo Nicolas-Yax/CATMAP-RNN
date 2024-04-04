@@ -155,8 +155,7 @@ class RNNAgent(Agent):
             lscores.append(eval_score)
             if len(lscores)>10:
                 del lscores[0]
-            if verbose>=1 or verbose >=2:
-                print(i,np.mean(lscores))
+            print(i,np.mean(lscores),flush=True)
             self.fit(batch,nb_fit)
 
     def plot_scores(self,alpha=0.5,color='blue'):
